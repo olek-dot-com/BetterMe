@@ -21,7 +21,6 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import java.util.concurrent.TimeUnit
-import kotlin.div
 
 @Composable
 fun UsageScreen(modifier: Modifier = Modifier) {
@@ -30,9 +29,6 @@ fun UsageScreen(modifier: Modifier = Modifier) {
     var hasPermission by remember { mutableStateOf(hasUsageStatsPermission(context)) }
     var dataLoaded by remember { mutableStateOf(false) }
     var showPermissionDialog by remember { mutableStateOf(false) }
-    var watchedApps by remember { mutableStateOf(mutableListOf<String>()) }
-    var allApps by remember { mutableStateOf(listOf<String>()) }
-    var showAllAppsDialog by remember { mutableStateOf(false) }
 
     val launcher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -57,10 +53,6 @@ fun UsageScreen(modifier: Modifier = Modifier) {
         }
     }
 
-    LaunchedEffect(Unit) {
-        allApps = getAllApps(context)
-    }
-
     Column(
         modifier = modifier.padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
@@ -78,49 +70,8 @@ fun UsageScreen(modifier: Modifier = Modifier) {
                 } else {
                     usageData.take(10).forEach { (packageName, timeSpent) ->
                         val timeInMinutes = timeSpent / 1000 / 60
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text("$packageName: $timeInMinutes minutes", modifier = Modifier.weight(1f))
-                            Button(onClick = {
-                                if (!watchedApps.contains(packageName)) {
-                                    watchedApps.add(packageName)
-                                }
-                            }) {
-                                Text("Watch")
-                            }
-                        }
+                        Text("$packageName: $timeInMinutes minutes")
                     }
-                }
-                Spacer(modifier = Modifier.height(16.dp))
-                Button(onClick = { showAllAppsDialog = true }) {
-                    Text("Show All Apps")
-                }
-                if (showAllAppsDialog) {
-                    AlertDialog(
-                        onDismissRequest = { showAllAppsDialog = false },
-                        title = { Text("All Apps") },
-                        text = {
-                            Column {
-                                allApps.forEach { app ->
-                                    TextButton(onClick = {
-                                        if (!watchedApps.contains(app)) {
-                                            watchedApps.add(app)
-                                        }
-                                        showAllAppsDialog = false
-                                    }) {
-                                        Text(app)
-                                    }
-                                }
-                            }
-                        },
-                        confirmButton = {
-                            Button(onClick = { showAllAppsDialog = false }) {
-                                Text("Close")
-                            }
-                        }
-                    )
                 }
             } else {
                 Text("Loading usage data...")
@@ -169,12 +120,6 @@ fun UsageScreen(modifier: Modifier = Modifier) {
             }
         }
     }
-}
-
-fun getAllApps(context: Context): List<String> {
-    val pm = context.packageManager
-    val packages = pm.getInstalledApplications(0)
-    return packages.map { it.packageName }
 }
 
 @Suppress("InlinedApi")
