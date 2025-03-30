@@ -41,7 +41,6 @@ import coil.compose.rememberAsyncImagePainter
 import com.example.projektinzyneiria.ui.theme.ProjektInzyneiriaTheme
 import kotlinx.coroutines.delay
 import java.util.concurrent.TimeUnit
-import kotlin.toString
 
 @Composable
 fun UsageScreen(modifier: Modifier = Modifier) {
