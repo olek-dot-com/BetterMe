@@ -14,6 +14,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -22,6 +23,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -41,12 +43,14 @@ import coil.compose.rememberAsyncImagePainter
 import com.example.projektinzyneiria.ui.theme.ProjektInzyneiriaTheme
 import kotlinx.coroutines.delay
 import java.util.concurrent.TimeUnit
-import kotlin.toString
 
 @Composable
 fun UsageScreen(modifier: Modifier = Modifier) {
     val context = LocalContext.current
-    var usageData by remember { mutableStateOf(listOf<Pair<String, Long>>()) }
+    var allUsageData by remember { mutableStateOf(listOf<Pair<String, Long>>()) }
+    var filteredUsageData by remember { mutableStateOf(listOf<Pair<String, Long>>()) }
+    var selectedApps by remember { mutableStateOf(setOf<String>()) }
+    var showAppSelection by remember { mutableStateOf(false) }
     var hasPermission by remember { mutableStateOf(hasUsageStatsPermission(context)) }
     var dataLoaded by remember { mutableStateOf(false) }
     var showPermissionDialog by remember { mutableStateOf(false) }
@@ -56,19 +60,23 @@ fun UsageScreen(modifier: Modifier = Modifier) {
     ) {
         hasPermission = hasUsageStatsPermission(context)
         if (hasPermission) {
-            usageData = getAppUsage(context)
+            allUsageData = getAppUsage(context)
             dataLoaded = true
         }
     }
 
     LaunchedEffect(hasPermission) {
         if (hasPermission) {
-            usageData = getAppUsage(context)
+            allUsageData = getAppUsage(context)
             dataLoaded = true
         }
         while (true) {
             if (hasPermission) {
-                usageData = getAppUsage(context)
+                allUsageData = getAppUsage(context)
+                // Update filtered data based on current selection
+                filteredUsageData = allUsageData.filter { (packageName, _) ->
+                    selectedApps.contains(packageName)
+                }
             }
             delay(TimeUnit.MINUTES.toMillis(5)) // Update every 5 minutes
         }
@@ -85,18 +93,33 @@ fun UsageScreen(modifier: Modifier = Modifier) {
         if (hasPermission) {
             if (dataLoaded) {
                 Text(
-                    "App Usage (Last 7 Days)",
+                    "App Usage (Last 24 Hours)",
                     style = MaterialTheme.typography.headlineSmall,
                     textAlign = TextAlign.Center
                 )
-                Spacer(modifier = Modifier.height(8.dp))
-                if (usageData.isEmpty()) {
-                    Text("No usage data found.")
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Button(onClick = { showAppSelection = true }) {
+                    Text("Select Apps to Display")
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                if (filteredUsageData.isEmpty()) {
+                    Text("No apps selected. Please select apps to display.")
                 } else {
                     LazyColumn {
-                        items(usageData.take(25)) { (packageName, timeSpent) -> // Limit to top 25 apps
+                        items(filteredUsageData) { (packageName, timeSpent) ->
                             timeCache[packageName] = timeSpent
-                            val (appName, appIcon, appTime) = getAppInfo(context, packageName, "MainActivity", iconCache, nameCache, timeCache) // Replace "MainActivity" with the actual class name if needed
+                            val (appName, appIcon, appTime) = getAppInfo(
+                                context,
+                                packageName,
+                                "MainActivity",
+                                iconCache,
+                                nameCache,
+                                timeCache
+                            )
                             val days = TimeUnit.MILLISECONDS.toDays(timeSpent)
                             val hours = TimeUnit.MILLISECONDS.toHours(timeSpent) % 24
                             val minutes = TimeUnit.MILLISECONDS.toMinutes(timeSpent) % 60
@@ -129,6 +152,7 @@ fun UsageScreen(modifier: Modifier = Modifier) {
                 Text("Loading usage data...")
             }
         } else {
+            // Permission request UI remains the same
             Text(
                 "Permission Required",
                 style = MaterialTheme.typography.headlineSmall,
@@ -172,8 +196,80 @@ fun UsageScreen(modifier: Modifier = Modifier) {
             }
         }
     }
+
+    // App selection dialog
+    if (showAppSelection && dataLoaded) {
+        AlertDialog(
+            onDismissRequest = { showAppSelection = false },
+            title = { Text("Select Apps to Display") },
+            text = {
+                Column {
+                    LazyColumn(modifier = Modifier.height(400.dp)) {
+                        items(allUsageData.take(50)) { (packageName, _) ->
+                            val (appName, appIcon, _) = getAppInfo(
+                                context,
+                                packageName,
+                                "MainActivity",
+                                iconCache,
+                                nameCache,
+                                timeCache
+                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Checkbox(
+                                    checked = selectedApps.contains(packageName),
+                                    onCheckedChange = { isChecked ->
+                                        selectedApps = if (isChecked) {
+                                            selectedApps + packageName
+                                        } else {
+                                            selectedApps - packageName
+                                        }
+                                    }
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                if (appIcon != null) {
+                                    Image(
+                                        painter = rememberAsyncImagePainter(model = appIcon),
+                                        contentDescription = "$appName icon",
+                                        modifier = Modifier.size(30.dp)
+                                    )
+                                } else {
+                                    Image(
+                                        painter = painterResource(id = R.drawable.ic_launcher_foreground),
+                                        contentDescription = "Default icon",
+                                        modifier = Modifier.size(30.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(appName)
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(onClick = {
+                    showAppSelection = false
+                    // Update filtered data based on selection
+                    filteredUsageData = allUsageData.filter { (packageName, _) ->
+                        selectedApps.contains(packageName)
+                    }
+                }) {
+                    Text("Confirm")
+                }
+            },
+            dismissButton = {
+                Button(onClick = { showAppSelection = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
 }
 
+// Rest of the code remains the same (hasUsageStatsPermission, getAppUsage, getAppInfo, getIcon)
 @Suppress("InlinedApi")
 fun hasUsageStatsPermission(context: Context): Boolean {
     val appOps = context.getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
@@ -218,10 +314,7 @@ fun getAppUsage(context: Context): List<Pair<String, Long>> {
     return usageDurations.entries
         .sortedByDescending { it.value } // Sort by usage duration
         .map { it.key to it.value }
-
-
 }
-
 
 fun getAppInfo(
     context: Context,
