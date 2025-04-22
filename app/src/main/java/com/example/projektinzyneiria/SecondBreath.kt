@@ -5,5 +5,5 @@ import androidx.compose.runtime.Composable
 
 @Composable
 fun SecondBreathScreen() {
-    Text(text = "Second Breath Screen")
+    Text(text = "Second Breath Screen", color = androidx.compose.ui.graphics.Color.White)
 }
