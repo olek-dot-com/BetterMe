@@ -48,6 +48,8 @@ import androidx.navigation.compose.rememberNavController
 import com.example.projektinzyneiria.UsageScreen
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
+import com.example.projektinzyneiria.BlackAndWhiteSchedule
+import com.example.projektinzyneiria.SecondBreathScreen
 
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -73,19 +75,22 @@ fun MainApp() {
     ) {
         MainScreen(
             onDrawerIconClicked = { scope.launch { drawerState.open() } }, // Pass the callback
-            content = {
+            content = { innerModifier ->
                 NavHost(
                     navController = navController,
-                    startDestination = "mainContent",
-                    modifier = Modifier.fillMaxSize()
+                    startDestination = "usageScreen",
+                    modifier = innerModifier
                 ) {
-                    composable("mainContent") {
-                        SectionContent() // Or your actual main screen content
-                    }
                     composable("usageScreen") {
                         UsageScreen()
                     }
-                    // Add other composable destinations here as needed
+
+                    composable("BlackAndWhiteSchedule") {
+                        BlackAndWhiteSchedule()
+                    }
+                    composable("SecondBreath") {
+                        SecondBreathScreen()
+                    }
                 }
             }
         )
@@ -146,7 +151,7 @@ fun DrawerContent(navController: NavController, drawerState: androidx.compose.ma
         Spacer(modifier = Modifier.height(8.dp))
 
         Button(onClick = {
-            navController.navigate("")
+            navController.navigate("SecondBreath")
             scope.launch { drawerState.close() }
         }) {
             Text("Second breath", style = MaterialTheme.typography.titleMedium)
@@ -185,15 +190,5 @@ fun BottomBar() {
             selected = false,
             onClick = { /* Handle Profile click */ }
         )
-    }
-}
-
-@Composable
-fun SectionContent(modifier: Modifier = Modifier) {
-    Box(
-        modifier = modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center
-    ) {
-        BasicText(text = "Tutaj wyświetlana będzie główna zawartość aplikacji.")
     }
 }
