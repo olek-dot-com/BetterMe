@@ -115,7 +115,7 @@ fun UsageScreen(modifier: Modifier = Modifier) {
                             val (appName, appIcon, appTime) = getAppInfo(
                                 context,
                                 packageName,
-                                "MainActivity",
+                                "MainActivity!",
                                 iconCache,
                                 nameCache,
                                 timeCache
