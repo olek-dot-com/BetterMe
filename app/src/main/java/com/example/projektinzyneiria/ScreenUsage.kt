@@ -9,6 +9,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.drawable.Drawable
 import android.provider.Settings
+import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
@@ -29,6 +30,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -43,6 +45,8 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import coil.compose.rememberAsyncImagePainter
 import com.example.projektinzyneiria.Data.AppUsage
 import com.example.projektinzyneiria.Data.AppUsageRepository
@@ -60,6 +64,8 @@ import kotlinx.datetime.minus
 import kotlinx.datetime.plus
 import kotlinx.datetime.toLocalDateTime
 import java.util.concurrent.TimeUnit
+import androidx.compose.ui.platform.LocalLifecycleOwner
+
 
 @Composable
 fun UsageScreen(modifier: Modifier = Modifier) {
@@ -104,28 +110,33 @@ fun UsageScreen(modifier: Modifier = Modifier) {
     var showAppSelection by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
 
-    LaunchedEffect(hasPermission, selectedDate) {
-        if (!hasPermission) return@LaunchedEffect
-
-        // pobierz statystyki za 7 dni
-        val usage7d = getAppUsageLast7Days(context)
-        // dla każdej monitorowanej paczki
-        monitoredPackages.forEach { pkg ->
-            // bierz tylko interesujący dzień
-            usage7d[pkg]?.forEach { (day, ms) ->
-                if (day == selectedDate) {
-                    repo.upsertUsage(
-                        AppUsage(
-                            packageName = pkg,
-                            date        = day,
-                            usageTimeMs = ms
-                        )
-                    )
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, hasPermission, selectedDate, monitoredPackages) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME && hasPermission) {
+                Log.d("UsageScreen", "Refreshing app usage data for date: $selectedDate")
+                // Za każdym razie wywołaj refresh
+                coroutineScope.launch {
+                    val usage7d = getAppUsageLast7Days(context)
+                    monitoredPackages.forEach { pkg ->
+                        usage7d[pkg]?.get(selectedDate)?.let { ms ->
+                            repo.upsertUsage(
+                                AppUsage(
+                                    packageName = pkg,
+                                    date        = selectedDate,
+                                    usageTimeMs = ms
+                                )
+                            )
+                        }
+                    }
                 }
             }
         }
-    }
-    // Lista zainstalowanych pakietów
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }    // Lista zainstalowanych pakietów
     val installedPackages = remember {
         context.packageManager.getInstalledApplications(0).map { it.packageName }
     }

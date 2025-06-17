@@ -23,4 +23,10 @@ interface AppLimitDao {
     /** Usuwa limit dla danej aplikacji */
     @Query("DELETE FROM app_limit WHERE package_name = :pkg")
     suspend fun deleteLimit(pkg: String)
+
+    @Query("SELECT * FROM app_limit")
+    suspend fun getAllLimitsOnce(): List<AppLimit>
+
+    @Query("SELECT package_name FROM app_limit")
+    fun getLimitedPackageNames(): Flow<List<String>>
 }

@@ -15,6 +15,10 @@ junitExt           = "1.2.1"
 espressoCore       = "3.6.1"
 hilt               = "2.47"
 kotlinx-datetime = "0.4.0"
+androidx-core = "1.10.0"
+androidx-lifecycle = "2.8.1"
+androidx-activity = "1.10.1"
+androidx-work = "2.10.0"
 
 [libraries]
 androidx-core-ktx              = { group = "androidx.core",              name = "core-ktx",                version.ref = "coreKtx" }
@@ -42,7 +46,9 @@ androidx-espresso-core         = { group = "androidx.test.espresso", name = "esp
 hilt-android                   = { group = "com.google.dagger", name = "hilt-android", version.ref = "hilt" }
 hilt-compiler                  = { group = "com.google.dagger", name = "hilt-compiler", version.ref = "hilt" }
 kotlinx-datetime = { group = "org.jetbrains.kotlinx", name = "kotlinx-datetime", version.ref = "kotlinx-datetime" }
-
+androidx-work-runtime-ktx = { group = "androidx.work",         name = "work-runtime-ktx",   version.ref = "androidx-work" }
+androidx-activity-ktx      = { group = "androidx.activity",     name = "activity-ktx",       version.ref = "androidx-activity" }
+androidx-lifecycle-runtime = { group = "androidx.lifecycle",    name = "lifecycle-runtime-ktx", version.ref = "androidx-lifecycle" }
 
 [plugins]
 android-application = { id = "com.android.application",         version.ref = "agp" }

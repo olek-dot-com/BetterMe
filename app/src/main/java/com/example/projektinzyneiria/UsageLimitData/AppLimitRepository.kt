@@ -3,6 +3,7 @@ package com.example.projektinzyneiria.UsageLimitData
 import android.content.Context
 import com.example.projektinzyneiria.Data.AppDatabase
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 
 class AppLimitRepository private constructor(
     private val dao: AppLimitDao
@@ -11,10 +12,16 @@ class AppLimitRepository private constructor(
     fun getAllLimits(): Flow<List<AppLimit>> =
         dao.getAllLimits()
 
+    suspend fun getAllLimitsOnce(): List<AppLimit> =
+        dao.getAllLimitsOnce()
+
     /** Pobiera limit dla danej aplikacji (lub null) */
     suspend fun getLimit(pkg: String): AppLimit? =
         dao.getLimitForPackage(pkg)
 
+    fun getLimitedPackages(): Flow<Set<String>> =
+        dao.getLimitedPackageNames()
+            .map { it.toSet() }
     /** Ustawia (lub nadpisuje) dzienny limit */
     suspend fun setLimit(pkg: String, minutes: Int) {
         dao.upsertLimit(AppLimit(packageName = pkg, dailyLimitMin = minutes))
@@ -33,4 +40,6 @@ class AppLimitRepository private constructor(
                 AppLimitRepository(db.appLimitDao()).also { INSTANCE = it }
             }
     }
+
+
 }
