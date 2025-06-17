@@ -40,7 +40,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import coil.compose.rememberAsyncImagePainter
-import com.example.projektinzyneiria.ui.theme.ProjektInzyneiriaTheme
+import com.example.projektinzyneiria.ui.theme.AppTheme
 import kotlinx.coroutines.delay
 import java.util.concurrent.TimeUnit
 
@@ -93,7 +93,7 @@ fun UsageScreen(modifier: Modifier = Modifier) {
         if (hasPermission) {
             if (dataLoaded) {
                 Text(
-                    "App Usage (Last 24 Hours)",
+                    "App Usage (Last 7 Days)",
                     style = MaterialTheme.typography.headlineSmall,
                     textAlign = TextAlign.Center
                 )
@@ -356,7 +356,7 @@ fun getIcon(context: Context, packageName: String, className: String): Drawable?
 @Preview(showBackground = true)
 @Composable
 fun DefaultPreview() {
-    ProjektInzyneiriaTheme {
+    AppTheme {
         UsageScreen()
     }
 }
