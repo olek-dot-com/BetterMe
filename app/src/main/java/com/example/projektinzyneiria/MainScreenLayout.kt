@@ -1,14 +1,12 @@
 
 //import androidx.compose.material.Button
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.text.BasicText
 import androidx.compose.material.BottomNavigation
 import androidx.compose.material.BottomNavigationItem
 import androidx.compose.material.icons.Icons
@@ -45,11 +43,12 @@ import androidx.navigation.NavController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import com.example.projektinzyneiria.UsageScreen
+//import com.example.projektinzyneiria.UsageScreen
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
-import com.example.projektinzyneiria.BlackAndWhiteSchedule
-import com.example.projektinzyneiria.SecondBreathScreen
+
+import com.example.projektinzyneiria.LimitScreen
+import com.example.projektinzyneiria.UsageScreen
 
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -57,7 +56,7 @@ import com.example.projektinzyneiria.SecondBreathScreen
 @Preview(showBackground = true)
 fun MainApp() {
     val navController = rememberNavController()
-    val drawerState = rememberDrawerState(DrawerValue.Open)
+    val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     var selectedItem by remember { mutableStateOf("mainContent") }
 
@@ -85,11 +84,8 @@ fun MainApp() {
                         UsageScreen()
                     }
 
-                    composable("BlackAndWhiteSchedule") {
-                        BlackAndWhiteSchedule()
-                    }
-                    composable("SecondBreath") {
-                        SecondBreathScreen()
+                    composable("LimitScreen") {
+                        LimitScreen()
                     }
                 }
             }
@@ -108,7 +104,7 @@ fun MainScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Main Screen") },
+                title = { Text("Screen Report") },
                 navigationIcon = {
                     IconButton(onClick = onDrawerIconClicked) {
                         Icon(
@@ -151,19 +147,10 @@ fun DrawerContent(navController: NavController, drawerState: androidx.compose.ma
         Spacer(modifier = Modifier.height(8.dp))
 
         Button(onClick = {
-            navController.navigate("SecondBreath")
+            navController.navigate("LimitScreen")
             scope.launch { drawerState.close() }
         }) {
-            Text("Second breath", style = MaterialTheme.typography.titleMedium)
-        }
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        Button(onClick = {
-            navController.navigate("BlackAndWhiteSchedule")
-            scope.launch { drawerState.close() }
-        }) {
-            Text("B&W schedule", style = MaterialTheme.typography.titleMedium)
+            Text("LimitScreen", style = MaterialTheme.typography.titleMedium)
         }
     }
 }
