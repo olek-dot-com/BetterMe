@@ -1,7 +1,9 @@
 package com.example.projektinzyneiria.Data
 
 import android.content.Context
-import java.time.LocalDate
+import android.util.Log
+import kotlinx.datetime.LocalDate
+
 
 // 1. Repozytorium z fabryką (singleton)
 class AppUsageRepository private constructor(
@@ -9,6 +11,9 @@ class AppUsageRepository private constructor(
 ) {
 
     suspend fun upsertUsage(usage: AppUsage) {
+        //logging for debugging
+        Log.d("Upserting usage: $usage", "AppUsageRepository")
+
         dao.upsert(usage)
     }
 
@@ -23,6 +28,11 @@ class AppUsageRepository private constructor(
 
     suspend fun deleteOlderThan(minDate: LocalDate) =
         dao.deleteOlderThan(minDate)
+
+    suspend fun isAppMonitored(pkg: String): Boolean =
+        dao.exists(pkg)
+    suspend fun getAllUsagesOnce(): List<AppUsage> =
+        dao.getAllOnce()
 
     companion object {
         @Volatile

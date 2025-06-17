@@ -14,7 +14,7 @@ junit              = "4.13.2"
 junitExt           = "1.2.1"
 espressoCore       = "3.6.1"
 hilt               = "2.47"
-ksp                = "2.0.21-1.0.26"
+kotlinx-datetime = "0.4.0"
 
 [libraries]
 androidx-core-ktx              = { group = "androidx.core",              name = "core-ktx",                version.ref = "coreKtx" }
@@ -41,6 +41,8 @@ androidx-junit                 = { group = "androidx.test.ext", name = "junit", 
 androidx-espresso-core         = { group = "androidx.test.espresso", name = "espresso-core", version.ref = "espressoCore" }
 hilt-android                   = { group = "com.google.dagger", name = "hilt-android", version.ref = "hilt" }
 hilt-compiler                  = { group = "com.google.dagger", name = "hilt-compiler", version.ref = "hilt" }
+kotlinx-datetime = { group = "org.jetbrains.kotlinx", name = "kotlinx-datetime", version.ref = "kotlinx-datetime" }
+
 
 [plugins]
 android-application = { id = "com.android.application",         version.ref = "agp" }

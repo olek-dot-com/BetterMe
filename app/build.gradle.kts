@@ -62,7 +62,7 @@ dependencies {
     implementation(libs.room.runtime)
     implementation(libs.room.ktx)
     ksp         (libs.room.compiler)
-
+    implementation(libs.kotlinx.datetime)
     implementation(libs.work.runtime.ktx)
 
     implementation(libs.hilt.android)

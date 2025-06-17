@@ -1,11 +1,11 @@
 package com.example.projektinzyneiria
 
 import android.app.AppOpsManager
+import android.app.DatePickerDialog
 import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.content.Intent
-import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.graphics.drawable.Drawable
 import android.provider.Settings
@@ -30,9 +30,11 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -42,139 +44,172 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import coil.compose.rememberAsyncImagePainter
+import com.example.projektinzyneiria.Data.AppUsage
+import com.example.projektinzyneiria.Data.AppUsageRepository
 import com.example.projektinzyneiria.ui.theme.AppTheme
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.datetime.Clock
+import kotlinx.datetime.DatePeriod
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.atStartOfDayIn
+import kotlinx.datetime.minus
+import kotlinx.datetime.plus
+import kotlinx.datetime.toLocalDateTime
 import java.util.concurrent.TimeUnit
 
 @Composable
 fun UsageScreen(modifier: Modifier = Modifier) {
     val context = LocalContext.current
-    var allUsageData by remember { mutableStateOf(listOf<Pair<String, Long>>()) }
-    var filteredUsageData by remember { mutableStateOf(listOf<Pair<String, Long>>()) }
-    var selectedApps by remember { mutableStateOf(setOf<String>()) }
-    var showAppSelection by remember { mutableStateOf(false) }
-    var hasPermission by remember { mutableStateOf(hasUsageStatsPermission(context)) }
-    var dataLoaded by remember { mutableStateOf(false) }
-    var showPermissionDialog by remember { mutableStateOf(false) }
-    var searchQuery by remember { mutableStateOf("") }
-
-    val installedPackages = remember {
-        context.packageManager
-            .getInstalledApplications(0)
-            .map { it.packageName }
+    val coroutineScope = rememberCoroutineScope()
+    val repo = remember { AppUsageRepository.getInstance(context) }
+    var selectedDate by remember {
+        mutableStateOf(
+            Clock.System.now()
+                .toLocalDateTime(TimeZone.currentSystemDefault())
+                .date
+        )
+    }
+    val datePicker = remember {
+        DatePickerDialog(
+            context,
+            { _, year, month, dayOfMonth ->
+                selectedDate = LocalDate(year, month + 1, dayOfMonth)
+            },
+            selectedDate.year,
+            selectedDate.monthNumber - 1,
+            selectedDate.dayOfMonth
+        )
     }
 
+    // Subskrypcja monitorowanych aplikacji z bazy
+    val dbUsages by repo.getAllUsages().collectAsState(initial = emptyList())
+    val monitoredPackages = remember(dbUsages) { dbUsages.map { it.packageName }.toSet() }
+    val dayUsages = remember(dbUsages, selectedDate) {
+        dbUsages.filter { it.date == selectedDate }
+    }
 
+    val displayData = remember(dayUsages) {
+        dayUsages
+            .sortedByDescending { it.usageTimeMs }
+            .map { it.packageName to it.usageTimeMs }
+    }
+
+    // Uprawnienia i UI state
+    var hasPermission by remember { mutableStateOf(hasUsageStatsPermission(context)) }
+    var showPermissionDialog by remember { mutableStateOf(false) }
+    var showAppSelection by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
+
+    LaunchedEffect(hasPermission, selectedDate) {
+        if (!hasPermission) return@LaunchedEffect
+
+        // pobierz statystyki za 7 dni
+        val usage7d = getAppUsageLast7Days(context)
+        // dla każdej monitorowanej paczki
+        monitoredPackages.forEach { pkg ->
+            // bierz tylko interesujący dzień
+            usage7d[pkg]?.forEach { (day, ms) ->
+                if (day == selectedDate) {
+                    repo.upsertUsage(
+                        AppUsage(
+                            packageName = pkg,
+                            date        = day,
+                            usageTimeMs = ms
+                        )
+                    )
+                }
+            }
+        }
+    }
+    // Lista zainstalowanych pakietów
+    val installedPackages = remember {
+        context.packageManager.getInstalledApplications(0).map { it.packageName }
+    }
+
+    // Launcher do ustawień
     val launcher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) {
         hasPermission = hasUsageStatsPermission(context)
-        if (hasPermission) {
-            allUsageData = getAppUsage(context)
-            dataLoaded = true
-        }
     }
 
-    LaunchedEffect(hasPermission) {
-        if (hasPermission) {
-            allUsageData = getAppUsage(context)
-            dataLoaded = true
-        }
-        while (true) {
-            if (hasPermission) {
-                allUsageData = getAppUsage(context)
-                // Update filtered data based on current selection
-                filteredUsageData = allUsageData.filter { (packageName, _) ->
-                    selectedApps.contains(packageName)
-                }
-            }
-            delay(TimeUnit.MINUTES.toMillis(5)) // Update every 5 minutes
-        }
-    }
-
-    val iconCache = remember { mutableMapOf<String, Drawable?>() }
-    val nameCache = remember { mutableMapOf<String, String>() }
-    val timeCache = remember { mutableMapOf<String, Long>() }
 
     Column(
         modifier = modifier.padding(16.dp).fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         if (hasPermission) {
-            if (dataLoaded) {
-                Text(
-                    "App Usage (Last 7 Days)",
-                    style = MaterialTheme.typography.headlineSmall,
-                    textAlign = TextAlign.Center
-                )
+            // Główna lista monitorowanych aplikacji
+            Text(
+                "Monitored Apps Usage",
+                style = MaterialTheme.typography.headlineSmall,
+                textAlign = TextAlign.Center
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            Button(onClick = { showAppSelection = true }) {
+                Text("Select Apps to Display")
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                "Usage on: $selectedDate",
+                style = MaterialTheme.typography.headlineSmall,
+                textAlign = TextAlign.Center
+            )
+            Spacer(Modifier.height(8.dp))
+            Button(onClick = { datePicker.show() }) {
+                Text("Select Date")
+            }
+            Spacer(Modifier.height(16.dp))
 
-                Spacer(modifier = Modifier.height(16.dp))
+            if (displayData.isEmpty()) {
+                Text("Brak monitorowanych aplikacji. Dodaj je poniżej.")
+            } else {
+                LazyColumn(modifier = Modifier.fillMaxWidth()) {
+                    items(displayData) { (pkg, timeSpent) ->
+                        val (appName, appIcon, _) = getAppInfo(
+                            context, pkg, iconCache = mutableMapOf(), nameCache = mutableMapOf()
+                        )
+                        val days = TimeUnit.MILLISECONDS.toDays(timeSpent)
+                        val hours = TimeUnit.MILLISECONDS.toHours(timeSpent) % 24
+                        val minutes = TimeUnit.MILLISECONDS.toMinutes(timeSpent) % 60
 
-                Button(onClick = { showAppSelection = true }) {
-                    Text("Select Apps to Display")
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                if (filteredUsageData.isEmpty()) {
-                    Text("No apps selected. Please select apps to display.")
-                } else {
-                    val displayData = remember(filteredUsageData, selectedApps) {
-                        val baseList = if (selectedApps.isEmpty()) {
-                            filteredUsageData                            // pokaż wszystko
-                        } else {
-                            filteredUsageData.filter { (pkg, _) ->       // pokaż tylko wybrane
-                                selectedApps.contains(pkg)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (appIcon != null) {
+                                Image(
+                                    painter = rememberAsyncImagePainter(model = appIcon),
+                                    contentDescription = "$appName icon",
+                                    modifier = Modifier.size(40.dp)
+                                )
+                            } else {
+                                Image(
+                                    painter = painterResource(id = android.R.drawable.sym_def_app_icon),
+                                    contentDescription = null,
+                                    modifier = Modifier.size(40.dp)
+                                )
                             }
-                        }
-                        baseList.sortedByDescending { it.second }   // <-- sortujemy po czasie
-                    }
-                    LazyColumn(
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        items(displayData) { (packageName, timeSpent) ->
-                            timeCache[packageName] = timeSpent
-                            val (appName, appIcon, appTime) = getAppInfo(
-                                context,
-                                packageName,
-                                "MainActivity!",
-                                iconCache,
-                                nameCache,
-                                timeCache
-                            )
-                            val days = TimeUnit.MILLISECONDS.toDays(timeSpent)
-                            val hours = TimeUnit.MILLISECONDS.toHours(timeSpent) % 24
-                            val minutes = TimeUnit.MILLISECONDS.toMinutes(timeSpent) % 60
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                if (appIcon != null) {
-                                    Image(
-                                        painter = rememberAsyncImagePainter(model = appIcon),
-                                        contentDescription = "$appName icon",
-                                        modifier = Modifier.size(40.dp)
-                                    )
-                                } else {
-                                    Image(
-                                        painter = painterResource(id = R.drawable.ic_launcher_foreground),
-                                        contentDescription = "Default icon",
-                                        modifier = Modifier.size(40.dp)
-                                    )
-                                }
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(buildString {
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                buildString {
                                     append("$appName: ")
                                     if (days > 0) append("$days dni ")
-                                    if (days > 0 || hours > 0) append("$hours godzin ")
-                                    append("$minutes minut")
-                                })
-                            }
+                                    if (hours > 0) append("$hours godz ")
+                                    append("$minutes min")
+                                }
+                            )
                         }
+                        Spacer(modifier = Modifier.height(8.dp))
                     }
                 }
-            } else {
-                Text("Loading usage data...")
             }
+
+
+
         } else {
-            // Permission request UI remains the same
+            // UI dla braku uprawnień
             Text(
                 "Permission Required",
                 style = MaterialTheme.typography.headlineSmall,
@@ -182,7 +217,7 @@ fun UsageScreen(modifier: Modifier = Modifier) {
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                "This app needs permission to access usage data. Please grant the permission in settings.",
+                "Grant usage access to monitor app usage.",
                 textAlign = TextAlign.Center
             )
             Spacer(modifier = Modifier.height(16.dp))
@@ -197,139 +232,106 @@ fun UsageScreen(modifier: Modifier = Modifier) {
                     title = { Text("Grant Usage Access") },
                     text = {
                         Text(
-                            "To use this feature, you need to allow this app to access usage data. " +
-                                    "On the next screen, find \"${context.packageManager.getApplicationLabel(context.applicationInfo)}\" and enable the permission."
+                            "Allow the app to access usage data in Settings."
                         )
                     },
                     confirmButton = {
                         Button(onClick = {
                             showPermissionDialog = false
                             launcher.launch(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
-                        }) {
-                            Text("Go to Settings")
-                        }
+                        }) { Text("Open Settings") }
                     },
-                    dismissButton = {
-                        Button(onClick = { showPermissionDialog = false }) {
-                            Text("Cancel")
-                        }
-                    }
+                    dismissButton = null
                 )
             }
         }
     }
 
-    // App selection dialog
-    if (showAppSelection && dataLoaded) {
+    // Dialog wyboru aplikacji
+    if (showAppSelection) {
         AlertDialog(
             onDismissRequest = { showAppSelection = false },
             title = { Text("Select Apps to Display") },
             text = {
-                // lista posortowana po nazwach aplikacji:
-                val sortedApps = remember(installedPackages, searchQuery) {
-                    installedPackages
-                        .map { pkg ->
-                            val label = try {
-                                context.packageManager
-                                    .getApplicationLabel(
-                                        context.packageManager.getApplicationInfo(pkg, 0)
-                                    ).toString()
-                            } catch (_: Exception) {
-                                pkg
-                            }
-                            label to pkg
-                        }
-                        .filter { (label, _) ->
-                            label.contains(searchQuery, ignoreCase = true)
-                        }
-                        .sortedBy { it.first.lowercase() }
-                }
-
                 Column {
-                    // ======== PASEK WYSZUKIWANIA ========
+                    // Search bar
                     OutlinedTextField(
                         value = searchQuery,
                         onValueChange = { searchQuery = it },
-                        placeholder = { Text("Szukaj aplikacji…") },
+                        placeholder = { Text("Search…") },
                         singleLine = true,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(bottom = 12.dp)
+                            .padding(bottom = 8.dp)
                     )
-
-                    // ======== LISTA APLIKACJI ========
                     LazyColumn(
                         modifier = Modifier
-                            .height(400.dp)
-                            .fillMaxWidth(),
-                        horizontalAlignment = Alignment.CenterHorizontally
+                            .height(300.dp)
+                            .fillMaxWidth()
                     ) {
-                        items(sortedApps) { (appName, packageName) ->
-                            // czas użycia:
-                            val timeSpent = allUsageData.toMap()[packageName] ?: 0L
-                            // ikonka:
-                            val appIcon = iconCache.getOrPut(packageName) {
-                                getIcon(context, packageName, "MainActivity")
+                        val sortedApps = installedPackages
+                            .map { pkg ->
+                                val label = try {
+                                    context.packageManager.getApplicationLabel(
+                                        context.packageManager.getApplicationInfo(pkg, 0)
+                                    ).toString()
+                                } catch (_: Exception) {
+                                    pkg
+                                }
+                                label to pkg
                             }
-                            // painter:
-                            val painter = if (appIcon != null) {
-                                rememberAsyncImagePainter(model = appIcon)
-                            } else {
-                                painterResource(id = R.drawable.ic_launcher_foreground)
-                            }
+                            .filter { (label, _) -> label.contains(searchQuery, ignoreCase = true) }
+                            .sortedBy { it.first.lowercase() }
 
+                        items(sortedApps) { (label, pkg) ->
+                            val checked = pkg in monitoredPackages
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(vertical = 4.dp, horizontal = 8.dp),
+                                    .padding(vertical = 4.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Checkbox(
-                                    checked = selectedApps.contains(packageName),
+                                    checked = pkg in monitoredPackages,
                                     onCheckedChange = { checked ->
-                                        selectedApps = if (checked) {
-                                            selectedApps + packageName
-                                        } else {
-                                            selectedApps - packageName
+                                        coroutineScope.launch {
+                                            if (checked) {
+                                                val usage7d = getAppUsageLast7Days(context)
+                                                // dla każdej pary (data → czas) w usage7d[pkg]:
+                                                usage7d[pkg]?.forEach { (day, ms) ->
+                                                    repo.upsertUsage(
+                                                        AppUsage(
+                                                            packageName = pkg,
+                                                            date        = day,
+                                                            usageTimeMs = ms
+                                                        )
+                                                    )
+                                                }
+                                            } else {
+                                                // usuwamy wszystkie dni tej paczki
+                                                repo.deleteUsagesForPackage(pkg)
+                                            }
                                         }
                                     }
                                 )
-                                Spacer(Modifier.width(8.dp))
-                                Image(
-                                    painter = painter,
-                                    contentDescription = "$appName icon",
-                                    modifier = Modifier.size(30.dp)
-                                )
-                                Spacer(Modifier.width(8.dp))
-                                Text(appName)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(label)
                             }
                         }
                     }
                 }
-            }
-,
+            },
             confirmButton = {
-                Button(onClick = {
-                    showAppSelection = false
-                    // Update filtered data based on selection
-                    val usageMap = allUsageData.toMap()
-                    filteredUsageData = selectedApps.map { pkg ->
-                        pkg to (usageMap[pkg] ?: 0L)
-                    }
-                }) {
-                    Text("Confirm")
+                Button(onClick = { showAppSelection = false }) {
+                    Text("Close")
                 }
             },
-            dismissButton = {
-                Button(onClick = { showAppSelection = false }) {
-                    Text("Cancel")
-                }
-            }
+            dismissButton = null
         )
     }
 }
 
-// Rest of the code remains the same (hasUsageStatsPermission, getAppUsage, getAppInfo, getIcon)
+// Helper: czy uprawnienie jest nadane
 @Suppress("InlinedApi")
 fun hasUsageStatsPermission(context: Context): Boolean {
     val appOps = context.getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
@@ -341,76 +343,49 @@ fun hasUsageStatsPermission(context: Context): Boolean {
     return mode == AppOpsManager.MODE_ALLOWED
 }
 
-fun getAppUsage(context: Context): List<Pair<String, Long>> {
-    val usageStatsManager =
-        context.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
+// Pobiera czas użycia aplikacji w ostatnich 24h
+fun getAppUsageLast24h(context: Context): Map<String, Long> {
+    val usageStatsManager = context.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
     val endTime = System.currentTimeMillis()
-    val startTime = endTime - TimeUnit.DAYS.toMillis(7) // Last 7 days
+    val startTime = endTime - TimeUnit.DAYS.toMillis(1)
 
-    val usageEvents = usageStatsManager.queryEvents(startTime, endTime)
     val resumeTimes = mutableMapOf<String, Long>()
     val usageDurations = mutableMapOf<String, Long>()
-
+    val events = usageStatsManager.queryEvents(startTime, endTime)
     val event = UsageEvents.Event()
-    while (usageEvents.hasNextEvent()) {
-        usageEvents.getNextEvent(event)
 
+    while (events.hasNextEvent()) {
+        events.getNextEvent(event)
         when (event.eventType) {
-            UsageEvents.Event.ACTIVITY_RESUMED -> {
+            UsageEvents.Event.ACTIVITY_RESUMED ->
                 resumeTimes[event.packageName] = event.timeStamp
-            }
-
             UsageEvents.Event.ACTIVITY_PAUSED -> {
-                val resumeTime = resumeTimes[event.packageName]
-                if (resumeTime != null) {
-                    val duration = event.timeStamp - resumeTime
-                    usageDurations[event.packageName] =
-                        (usageDurations[event.packageName] ?: 0L) + duration
+                resumeTimes[event.packageName]?.let { resume ->
+                    val delta = event.timeStamp - resume
+                    usageDurations[event.packageName] = (usageDurations[event.packageName] ?: 0L) + delta
                 }
             }
         }
     }
-
-    return usageDurations.entries
-        .sortedByDescending { it.value } // Sort by usage duration
-        .map { it.key to it.value }
+    return usageDurations
 }
 
+// Pobiera nazwę i ikonę aplikacji
 fun getAppInfo(
     context: Context,
     packageName: String,
-    className: String,
     iconCache: MutableMap<String, Drawable?>,
-    nameCache: MutableMap<String, String>,
-    timeCache: MutableMap<String, Long>
-): Triple<String, Drawable?, Long?> {
-    val packageManager = context.packageManager
+    nameCache: MutableMap<String, String>
+): Triple<String, Drawable?, Nothing?> {
     return try {
-        val appInfo = packageManager.getApplicationInfo(packageName, 0)
-        val appName = nameCache.getOrPut(packageName) { packageManager.getApplicationLabel(appInfo).toString() }
-        val appIcon = iconCache.getOrPut(packageName) { getIcon(context, packageName, className) }
-        val appTime = timeCache[packageName]
-        Triple(appName, appIcon, appTime)
+        val pm = context.packageManager
+        val ai = pm.getApplicationInfo(packageName, 0)
+        val label = nameCache.getOrPut(packageName) { pm.getApplicationLabel(ai).toString() }
+        val icon = iconCache.getOrPut(packageName) { pm.getApplicationIcon(packageName) }
+        Triple(label, icon, null)
     } catch (e: PackageManager.NameNotFoundException) {
         Triple(packageName, null, null)
     }
-}
-
-fun getIcon(context: Context, packageName: String, className: String): Drawable? {
-    var drawable: Drawable? = null
-    try {
-        val intent = Intent(Intent.ACTION_MAIN)
-        intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
-        intent.setClassName(packageName, className)
-        drawable = context.packageManager.getActivityIcon(intent)
-    } catch (e: Exception) {
-        try {
-            drawable = context.packageManager.getApplicationIcon(packageName)
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-    }
-    return drawable
 }
 
 @Preview(showBackground = true)
@@ -419,4 +394,25 @@ fun DefaultPreview() {
     AppTheme {
         UsageScreen()
     }
+}
+fun getAppUsageLast7Days(context: Context): Map<String, Map<LocalDate, Long>> {
+    val usm = context.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
+    val zone = TimeZone.currentSystemDefault()
+    val today = Clock.System.now().toLocalDateTime(zone).date
+
+    val result = mutableMapOf<String, MutableMap<LocalDate, Long>>()
+
+    for (i in 0 until 7) {
+        val day = today.minus(DatePeriod(days = i))
+        val start = day.atStartOfDayIn(zone).toEpochMilliseconds()
+        val end   = day.plus(DatePeriod(days = 1)).atStartOfDayIn(zone).toEpochMilliseconds()
+
+        val statsList = usm.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, start, end)
+        statsList.forEach { stat ->
+            val pkg = stat.packageName
+            val t   = stat.totalTimeInForeground
+            result.getOrPut(pkg) { mutableMapOf() }[day] = t
+        }
+    }
+    return result
 }

@@ -6,7 +6,7 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import kotlinx.coroutines.flow.Flow
-import java.time.LocalDate
+import kotlinx.datetime.LocalDate
 
 @Dao
 interface AppUsageDao {
@@ -25,10 +25,15 @@ interface AppUsageDao {
     @Query("DELETE FROM app_usage")
     suspend fun deleteAll()
 
+    @Query("SELECT EXISTS(SELECT 1 FROM app_usage WHERE package_name = :pkg)")
+    suspend fun exists(pkg: String): Boolean
     /**
      * Usuwa wpisy, których packageName jest równy podanemu
      * @param packageName nazwa paczki do usunięcia
      */
     @Query("DELETE FROM app_usage WHERE package_name = :packageName")
     suspend fun deleteByPackageName(packageName: String)
+
+    @Query("SELECT * FROM app_usage")
+    suspend fun getAllOnce(): List<AppUsage>
 }
