@@ -13,4 +13,6 @@ data class AppLimit(
     /** Dzienny limit w minutach */
     @ColumnInfo(name = "daily_limit_min")
     val dailyLimitMin: Int
+
+
 )
