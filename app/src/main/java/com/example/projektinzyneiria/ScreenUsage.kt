@@ -5,6 +5,7 @@ import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.graphics.drawable.Drawable
 import android.provider.Settings
@@ -25,6 +26,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -54,6 +56,14 @@ fun UsageScreen(modifier: Modifier = Modifier) {
     var hasPermission by remember { mutableStateOf(hasUsageStatsPermission(context)) }
     var dataLoaded by remember { mutableStateOf(false) }
     var showPermissionDialog by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
+
+    val installedPackages = remember {
+        context.packageManager
+            .getInstalledApplications(0)
+            .map { it.packageName }
+    }
+
 
     val launcher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -87,7 +97,7 @@ fun UsageScreen(modifier: Modifier = Modifier) {
     val timeCache = remember { mutableMapOf<String, Long>() }
 
     Column(
-        modifier = modifier.padding(16.dp),
+        modifier = modifier.padding(16.dp).fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         if (hasPermission) {
@@ -109,8 +119,20 @@ fun UsageScreen(modifier: Modifier = Modifier) {
                 if (filteredUsageData.isEmpty()) {
                     Text("No apps selected. Please select apps to display.")
                 } else {
-                    LazyColumn {
-                        items(filteredUsageData) { (packageName, timeSpent) ->
+                    val displayData = remember(filteredUsageData, selectedApps) {
+                        val baseList = if (selectedApps.isEmpty()) {
+                            filteredUsageData                            // pokaż wszystko
+                        } else {
+                            filteredUsageData.filter { (pkg, _) ->       // pokaż tylko wybrane
+                                selectedApps.contains(pkg)
+                            }
+                        }
+                        baseList.sortedByDescending { it.second }   // <-- sortujemy po czasie
+                    }
+                    LazyColumn(
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        items(displayData) { (packageName, timeSpent) ->
                             timeCache[packageName] = timeSpent
                             val (appName, appIcon, appTime) = getAppInfo(
                                 context,
@@ -203,58 +225,96 @@ fun UsageScreen(modifier: Modifier = Modifier) {
             onDismissRequest = { showAppSelection = false },
             title = { Text("Select Apps to Display") },
             text = {
+                // lista posortowana po nazwach aplikacji:
+                val sortedApps = remember(installedPackages, searchQuery) {
+                    installedPackages
+                        .map { pkg ->
+                            val label = try {
+                                context.packageManager
+                                    .getApplicationLabel(
+                                        context.packageManager.getApplicationInfo(pkg, 0)
+                                    ).toString()
+                            } catch (_: Exception) {
+                                pkg
+                            }
+                            label to pkg
+                        }
+                        .filter { (label, _) ->
+                            label.contains(searchQuery, ignoreCase = true)
+                        }
+                        .sortedBy { it.first.lowercase() }
+                }
+
                 Column {
-                    LazyColumn(modifier = Modifier.height(400.dp)) {
-                        items(allUsageData.take(50)) { (packageName, _) ->
-                            val (appName, appIcon, _) = getAppInfo(
-                                context,
-                                packageName,
-                                "MainActivity",
-                                iconCache,
-                                nameCache,
-                                timeCache
-                            )
+                    // ======== PASEK WYSZUKIWANIA ========
+                    OutlinedTextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it },
+                        placeholder = { Text("Szukaj aplikacji…") },
+                        singleLine = true,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 12.dp)
+                    )
+
+                    // ======== LISTA APLIKACJI ========
+                    LazyColumn(
+                        modifier = Modifier
+                            .height(400.dp)
+                            .fillMaxWidth(),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        items(sortedApps) { (appName, packageName) ->
+                            // czas użycia:
+                            val timeSpent = allUsageData.toMap()[packageName] ?: 0L
+                            // ikonka:
+                            val appIcon = iconCache.getOrPut(packageName) {
+                                getIcon(context, packageName, "MainActivity")
+                            }
+                            // painter:
+                            val painter = if (appIcon != null) {
+                                rememberAsyncImagePainter(model = appIcon)
+                            } else {
+                                painterResource(id = R.drawable.ic_launcher_foreground)
+                            }
+
                             Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.fillMaxWidth()
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp, horizontal = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Checkbox(
                                     checked = selectedApps.contains(packageName),
-                                    onCheckedChange = { isChecked ->
-                                        selectedApps = if (isChecked) {
+                                    onCheckedChange = { checked ->
+                                        selectedApps = if (checked) {
                                             selectedApps + packageName
                                         } else {
                                             selectedApps - packageName
                                         }
                                     }
                                 )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                if (appIcon != null) {
-                                    Image(
-                                        painter = rememberAsyncImagePainter(model = appIcon),
-                                        contentDescription = "$appName icon",
-                                        modifier = Modifier.size(30.dp)
-                                    )
-                                } else {
-                                    Image(
-                                        painter = painterResource(id = R.drawable.ic_launcher_foreground),
-                                        contentDescription = "Default icon",
-                                        modifier = Modifier.size(30.dp)
-                                    )
-                                }
-                                Spacer(modifier = Modifier.width(8.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Image(
+                                    painter = painter,
+                                    contentDescription = "$appName icon",
+                                    modifier = Modifier.size(30.dp)
+                                )
+                                Spacer(Modifier.width(8.dp))
                                 Text(appName)
                             }
                         }
                     }
                 }
-            },
+            }
+,
             confirmButton = {
                 Button(onClick = {
                     showAppSelection = false
                     // Update filtered data based on selection
-                    filteredUsageData = allUsageData.filter { (packageName, _) ->
-                        selectedApps.contains(packageName)
+                    val usageMap = allUsageData.toMap()
+                    filteredUsageData = selectedApps.map { pkg ->
+                        pkg to (usageMap[pkg] ?: 0L)
                     }
                 }) {
                     Text("Confirm")

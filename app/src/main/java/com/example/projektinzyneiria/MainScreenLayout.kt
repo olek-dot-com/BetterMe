@@ -45,11 +45,12 @@ import androidx.navigation.NavController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import com.example.projektinzyneiria.UsageScreen
+//import com.example.projektinzyneiria.UsageScreen
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import com.example.projektinzyneiria.BlackAndWhiteSchedule
 import com.example.projektinzyneiria.SecondBreathScreen
+import com.example.projektinzyneiria.UsageScreen
 
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -57,7 +58,7 @@ import com.example.projektinzyneiria.SecondBreathScreen
 @Preview(showBackground = true)
 fun MainApp() {
     val navController = rememberNavController()
-    val drawerState = rememberDrawerState(DrawerValue.Open)
+    val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     var selectedItem by remember { mutableStateOf("mainContent") }
 
@@ -108,7 +109,7 @@ fun MainScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Main Screen") },
+                title = { Text("Screen Report") },
                 navigationIcon = {
                     IconButton(onClick = onDrawerIconClicked) {
                         Icon(
