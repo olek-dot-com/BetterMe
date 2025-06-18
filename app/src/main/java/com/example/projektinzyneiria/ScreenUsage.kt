@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.drawable.Drawable
+import android.os.Build
 import android.provider.Settings
 import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -65,6 +66,8 @@ import kotlinx.datetime.plus
 import kotlinx.datetime.toLocalDateTime
 import java.util.concurrent.TimeUnit
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.core.content.ContextCompat
+import com.example.projektinzyneiria.UsageLimitData.AppLimitRepository
 
 
 @Composable
@@ -72,6 +75,7 @@ fun UsageScreen(modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     val repo = remember { AppUsageRepository.getInstance(context) }
+    val repolimit = remember { AppLimitRepository.getInstance(context) }
     var selectedDate by remember {
         mutableStateOf(
             Clock.System.now()
@@ -105,15 +109,31 @@ fun UsageScreen(modifier: Modifier = Modifier) {
     }
 
     // Uprawnienia i UI state
-    var hasPermission by remember { mutableStateOf(hasUsageStatsPermission(context)) }
+    var hasUsagePermission by remember { mutableStateOf(hasUsageStatsPermission(context)) }
+    var hasNotificationPermission by remember { mutableStateOf(hasNotificationPermission(context)) }
     var showPermissionDialog by remember { mutableStateOf(false) }
+    var showNotificationPermissionDialog by remember { mutableStateOf(false) }
     var showAppSelection by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
 
+    // Launcher do ustawień użycia
+    val usageLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) {
+        hasUsagePermission = hasUsageStatsPermission(context)
+    }
+
+    // Launcher do uprawnień powiadomień
+    val notificationLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        hasNotificationPermission = isGranted
+    }
+
     val lifecycleOwner = LocalLifecycleOwner.current
-    DisposableEffect(lifecycleOwner, hasPermission, selectedDate, monitoredPackages) {
+    DisposableEffect(lifecycleOwner, hasUsagePermission, selectedDate, monitoredPackages) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME && hasPermission) {
+            if (event == Lifecycle.Event.ON_RESUME && hasUsagePermission) {
                 Log.d("UsageScreen", "Refreshing app usage data for date: $selectedDate")
                 // Za każdym razie wywołaj refresh
                 coroutineScope.launch {
@@ -136,124 +156,144 @@ fun UsageScreen(modifier: Modifier = Modifier) {
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
         }
-    }    // Lista zainstalowanych pakietów
+    }
+
+    // Lista zainstalowanych pakietów
     val installedPackages = remember {
         context.packageManager.getInstalledApplications(0).map { it.packageName }
     }
-
-    // Launcher do ustawień
-    val launcher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) {
-        hasPermission = hasUsageStatsPermission(context)
-    }
-
 
     Column(
         modifier = modifier.padding(16.dp).fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        if (hasPermission) {
-            // Główna lista monitorowanych aplikacji
-            Text(
-                "Monitored Apps Usage",
-                style = MaterialTheme.typography.headlineSmall,
-                textAlign = TextAlign.Center
-            )
-            Spacer(modifier = Modifier.height(16.dp))
-            Button(onClick = { showAppSelection = true }) {
-                Text("Select Apps to Display")
-            }
-            Spacer(modifier = Modifier.height(16.dp))
-            Text(
-                "Usage on: $selectedDate",
-                style = MaterialTheme.typography.headlineSmall,
-                textAlign = TextAlign.Center
-            )
-            Spacer(Modifier.height(8.dp))
-            Button(onClick = { datePicker.show() }) {
-                Text("Select Date")
-            }
-            Spacer(Modifier.height(16.dp))
-
-            if (displayData.isEmpty()) {
-                Text("Brak monitorowanych aplikacji. Dodaj je poniżej.")
-            } else {
-                LazyColumn(modifier = Modifier.fillMaxWidth()) {
-                    items(displayData) { (pkg, timeSpent) ->
-                        val (appName, appIcon, _) = getAppInfo(
-                            context, pkg, iconCache = mutableMapOf(), nameCache = mutableMapOf()
-                        )
-                        val days = TimeUnit.MILLISECONDS.toDays(timeSpent)
-                        val hours = TimeUnit.MILLISECONDS.toHours(timeSpent) % 24
-                        val minutes = TimeUnit.MILLISECONDS.toMinutes(timeSpent) % 60
-
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            if (appIcon != null) {
-                                Image(
-                                    painter = rememberAsyncImagePainter(model = appIcon),
-                                    contentDescription = "$appName icon",
-                                    modifier = Modifier.size(40.dp)
-                                )
-                            } else {
-                                Image(
-                                    painter = painterResource(id = android.R.drawable.sym_def_app_icon),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(40.dp)
-                                )
-                            }
-                            Spacer(modifier = Modifier.width(8.dp))
+        // Sprawdzenie uprawnień
+        when {
+            !hasUsagePermission -> {
+                // UI dla braku uprawnień do użycia
+                Text(
+                    "Usage Stats Permission Required",
+                    style = MaterialTheme.typography.headlineSmall,
+                    textAlign = TextAlign.Center
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    "Grant usage access to monitor app usage.",
+                    textAlign = TextAlign.Center
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                Button(onClick = {
+                    showPermissionDialog = true
+                }) {
+                    Text("Grant Usage Permission")
+                }
+                if (showPermissionDialog) {
+                    AlertDialog(
+                        onDismissRequest = { showPermissionDialog = false },
+                        title = { Text("Grant Usage Access") },
+                        text = {
                             Text(
-                                buildString {
-                                    append("$appName: ")
-                                    if (days > 0) append("$days dni ")
-                                    if (hours > 0) append("$hours godz ")
-                                    append("$minutes min")
-                                }
+                                "Allow the app to access usage data in Settings."
                             )
-                        }
-                        Spacer(modifier = Modifier.height(8.dp))
-                    }
+                        },
+                        confirmButton = {
+                            Button(onClick = {
+                                showPermissionDialog = false
+                                usageLauncher.launch(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+                            }) { Text("Open Settings") }
+                        },
+                        dismissButton = null
+                    )
                 }
             }
-
-
-
-        } else {
-            // UI dla braku uprawnień
-            Text(
-                "Permission Required",
-                style = MaterialTheme.typography.headlineSmall,
-                textAlign = TextAlign.Center
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                "Grant usage access to monitor app usage.",
-                textAlign = TextAlign.Center
-            )
-            Spacer(modifier = Modifier.height(16.dp))
-            Button(onClick = {
-                showPermissionDialog = true
-            }) {
-                Text("Grant Permission")
-            }
-            if (showPermissionDialog) {
-                AlertDialog(
-                    onDismissRequest = { showPermissionDialog = false },
-                    title = { Text("Grant Usage Access") },
-                    text = {
-                        Text(
-                            "Allow the app to access usage data in Settings."
-                        )
-                    },
-                    confirmButton = {
-                        Button(onClick = {
-                            showPermissionDialog = false
-                            launcher.launch(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
-                        }) { Text("Open Settings") }
-                    },
-                    dismissButton = null
+            !hasNotificationPermission -> {
+                // UI dla braku uprawnień do powiadomień
+                Text(
+                    "Notification Permission Required",
+                    style = MaterialTheme.typography.headlineSmall,
+                    textAlign = TextAlign.Center
                 )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    "Grant notification permission to receive usage alerts.",
+                    textAlign = TextAlign.Center
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                Button(onClick = {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        notificationLauncher.launch("android.permission.POST_NOTIFICATIONS")
+                    } else {
+                        // For older versions, notifications are granted by default
+                        hasNotificationPermission = true
+                    }
+                }) {
+                    Text("Grant Notification Permission")
+                }
+            }
+            else -> {
+                // Główna lista monitorowanych aplikacji (gdy oba uprawnienia są nadane)
+                Text(
+                    "Monitored Apps Usage",
+                    style = MaterialTheme.typography.headlineSmall,
+                    textAlign = TextAlign.Center
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Button(onClick = { showAppSelection = true }) {
+                    Text("Select Apps to Display")
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    "Usage on: $selectedDate",
+                    style = MaterialTheme.typography.headlineSmall,
+                    textAlign = TextAlign.Center
+                )
+                Spacer(Modifier.height(8.dp))
+                Button(onClick = { datePicker.show() }) {
+                    Text("Select Date")
+                }
+                Spacer(Modifier.height(16.dp))
+
+                if (displayData.isEmpty()) {
+                    Text("Brak monitorowanych aplikacji. Dodaj je poniżej.")
+                } else {
+                    LazyColumn(modifier = Modifier.fillMaxWidth()) {
+                        items(displayData) { (pkg, timeSpent) ->
+                            val (appName, appIcon, _) = getAppInfo(
+                                context, pkg, iconCache = mutableMapOf(), nameCache = mutableMapOf()
+                            )
+                            val days = TimeUnit.MILLISECONDS.toDays(timeSpent)
+                            val hours = TimeUnit.MILLISECONDS.toHours(timeSpent) % 24
+                            val minutes = TimeUnit.MILLISECONDS.toMinutes(timeSpent) % 60
+
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                if (appIcon != null) {
+                                    Image(
+                                        painter = rememberAsyncImagePainter(model = appIcon),
+                                        contentDescription = "$appName icon",
+                                        modifier = Modifier.size(40.dp)
+                                    )
+                                } else {
+                                    Image(
+                                        painter = painterResource(id = android.R.drawable.sym_def_app_icon),
+                                        contentDescription = null,
+                                        modifier = Modifier.size(40.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    buildString {
+                                        append("$appName: ")
+                                        if (days > 0) append("$days dni ")
+                                        if (hours > 0) append("$hours godz ")
+                                        append("$minutes min")
+                                    }
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(8.dp))
+                        }
+                    }
+                }
             }
         }
     }
@@ -292,7 +332,8 @@ fun UsageScreen(modifier: Modifier = Modifier) {
                                 label to pkg
                             }
                             .filter { (label, _) -> label.contains(searchQuery, ignoreCase = true) }
-                            .sortedBy { it.first.lowercase() }
+                            .sortedWith(compareByDescending<Pair<String, String>> { it.second in monitoredPackages }
+                                .thenBy { it.first.lowercase() })
 
                         items(sortedApps) { (label, pkg) ->
                             val checked = pkg in monitoredPackages
@@ -321,6 +362,7 @@ fun UsageScreen(modifier: Modifier = Modifier) {
                                             } else {
                                                 // usuwamy wszystkie dni tej paczki
                                                 repo.deleteUsagesForPackage(pkg)
+                                                repolimit.clearLimit(pkg)
                                             }
                                         }
                                     }
@@ -342,7 +384,7 @@ fun UsageScreen(modifier: Modifier = Modifier) {
     }
 }
 
-// Helper: czy uprawnienie jest nadane
+// Helper: czy uprawnienie do usage stats jest nadane
 @Suppress("InlinedApi")
 fun hasUsageStatsPermission(context: Context): Boolean {
     val appOps = context.getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
@@ -352,6 +394,19 @@ fun hasUsageStatsPermission(context: Context): Boolean {
         context.packageName
     )
     return mode == AppOpsManager.MODE_ALLOWED
+}
+
+// Helper: czy uprawnienie do powiadomień jest nadane
+fun hasNotificationPermission(context: Context): Boolean {
+    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        ContextCompat.checkSelfPermission(
+            context,
+            "android.permission.POST_NOTIFICATIONS"
+        ) == PackageManager.PERMISSION_GRANTED
+    } else {
+        // W starszych wersjach Androida powiadomienia są domyślnie dostępne
+        true
+    }
 }
 
 // Pobiera czas użycia aplikacji w ostatnich 24h
@@ -406,6 +461,7 @@ fun DefaultPreview() {
         UsageScreen()
     }
 }
+
 fun getAppUsageLast7Days(context: Context): Map<String, Map<LocalDate, Long>> {
     val usm = context.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
     val zone = TimeZone.currentSystemDefault()

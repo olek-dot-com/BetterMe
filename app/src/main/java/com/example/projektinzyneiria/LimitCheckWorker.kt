@@ -141,15 +141,25 @@ class LimitCheckWorker(
                 as NotificationManager
 
         // 3) Zbuduj powiadomienie
+        val appName = getAppLabel(ctx, pkg)
         val text = "Użyto ${format(usedMin)} / dozwolone ${format(limitMin.toLong())}"
         val notif = NotificationCompat.Builder(ctx, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)    // <–– must be white-on-transparent icon
-            .setContentTitle("Przekroczono limit!")
+            .setContentTitle("Przekroczono limit dla $appName!")
             .setContentText(text)
             .setAutoCancel(true)
             .build()
         Log.d(TAG, "Notification built: $notif")
         // 4) Wyślij
         notificationManager.notify(pkg.hashCode(), notif)
+    }
+}
+fun getAppLabel(context: Context, packageName: String): String {
+    return try {
+        val pm = context.packageManager
+        val ai = pm.getApplicationInfo(packageName, 0)
+        pm.getApplicationLabel(ai).toString()
+    } catch (e: PackageManager.NameNotFoundException) {
+        packageName // Zwraca packageName, jeśli nie znaleziono aplikacji
     }
 }
